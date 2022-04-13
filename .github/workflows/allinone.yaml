@@ -1,0 +1,169 @@
+name: Multi-Deploy
+on:
+  push:
+    branches: main
+  workflow_dispatch:
+env:
+  SERVICE_NAME: ${{ github.event.repository.name }}
+  Repo_name: ${{ github.event.repository.name }}
+  Eureka_name: eureka-server
+  Api_gateway: apigateway
+  CurrencyConversion_name: currencyconversionservice
+  CurrencyExchange_name: currencyexchangeservice
+
+
+jobs:
+  Eureka-server:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v2
+      - id: 'auth'
+        uses: 'google-github-actions/auth@v0'
+        with:
+          credentials_json: '${{ secrets.GCP_SA_KEY }}'
+      - uses: geekyeggo/delete-artifact@v1
+        with:
+          name: binaries-artifact
+      - run: mkdir -p /tmp/$Eureka_name/
+      - name: Eureka server
+        run: |
+          gcloud config set project us-gcp-ame-con-116-npd-1
+          docker build -t gcr.io/us-gcp-ame-con-116-npd-1/$Repo_name/$Eureka_name:$GITHUB_SHA ./eureka-server
+          gcloud auth configure-docker -q
+          docker push gcr.io/us-gcp-ame-con-116-npd-1/$Repo_name/$Eureka_name:$GITHUB_SHA
+      - name: Deploy
+        id: deploy
+        run: |
+          gcloud run deploy $Repo_name$Eureka_name --image gcr.io/us-gcp-ame-con-116-npd-1/$Repo_name/$Eureka_name:$GITHUB_SHA --platform managed --region us-west2 --allow-unauthenticated
+      #Copy class files onto host Ubuntu container
+      - name: Copy Binaries to host container
+        run: |-
+          docker create -ti --name intermediate_con gcr.io/us-gcp-ame-con-116-npd-1/$Repo_name/$Eureka_name:$GITHUB_SHA bash
+          docker cp  intermediate_con:/usr/local/target /tmp/$Eureka_name/target/
+          docker rm -f intermediate_con
+      - uses: actions/upload-artifact@v3
+        with:
+          name: binaries-artifact
+          path: /tmp/${{env.Eureka_name}}/target/classes
+      - name: Show Output
+        run: |
+          echo ${{ steps.deploy.outputs.url }}
+  API-Gateway:
+    runs-on: ubuntu-latest
+    needs: Eureka-server
+    steps:
+    - uses: actions/checkout@v2
+    - id: 'auth'
+      uses: 'google-github-actions/auth@v0'
+      with:
+        credentials_json: '${{ secrets.GCP_SA_KEY }}'
+    - run: mkdir -p /tmp/$Api_gateway/
+    - name: api-gateserver
+      run: |
+        gcloud config set project us-gcp-ame-con-116-npd-1
+        docker build -t gcr.io/us-gcp-ame-con-116-npd-1/$Repo_name/$Api_gateway ./api-gateway-server
+        gcloud auth configure-docker -q
+        docker push gcr.io/us-gcp-ame-con-116-npd-1/$Repo_name/$Api_gateway
+    - name: Deploy
+      id: deploy
+      run: |
+        gcloud run deploy $Repo_name$Api_gateway  --image gcr.io/us-gcp-ame-con-116-npd-1/$Repo_name/$Api_gateway   --platform managed --region us-west2 --allow-unauthenticated
+    - name: Show Output
+      run: echo ${{ steps.deploy.outputs.url }}
+    #Copy class files onto host Ubuntu container
+    - name: Copy Binaries to host container
+      run: |-
+        docker create -ti --name intermediate_con gcr.io/us-gcp-ame-con-116-npd-1/$Repo_name/$Api_gateway bash
+        docker cp  intermediate_con:/usr/local/target /tmp/$Api_gateway/target/
+        docker rm -f intermediate_con
+    - uses: actions/upload-artifact@v3
+      with:
+        name: binaries-artifact
+        path: /tmp/${{env.Api_gateway}}/target/classes
+  Currency-Conversion-Service:
+    runs-on: ubuntu-latest
+    needs: Eureka-server
+    steps:
+    - uses: actions/checkout@v2
+    - id: 'auth'
+      uses: 'google-github-actions/auth@v0'
+      with:
+        credentials_json: '${{ secrets.GCP_SA_KEY }}'
+    - run: mkdir -p /tmp/$CurrencyConversion_name/
+    - name: currency-conversion-service
+      run: |
+        gcloud config set project us-gcp-ame-con-116-npd-1
+        docker build -t gcr.io/us-gcp-ame-con-116-npd-1/$Repo_name/$CurrencyConversion_name ./currency-conversion-service
+        gcloud auth configure-docker -q
+        docker push gcr.io/us-gcp-ame-con-116-npd-1/$Repo_name/$CurrencyConversion_name
+        gcloud run deploy $Repo_name$CurrencyConversion_name --image gcr.io/us-gcp-ame-con-116-npd-1/$Repo_name/$CurrencyConversion_name  --platform managed --region us-west2 --allow-unauthenticated
+    #Copy class files onto host Ubuntu container
+    - name: Copy Binaries to host container
+      run: |-
+        docker create -ti --name intermediate_con gcr.io/us-gcp-ame-con-116-npd-1/$Repo_name/$CurrencyConversion_name bash
+        docker cp  intermediate_con:/usr/local/target /tmp/$CurrencyConversion_name/target/
+        docker rm -f intermediate_con
+    - uses: actions/upload-artifact@v3
+      with:
+        name: binaries-artifact
+        path: /tmp/${{env.CurrencyConversion_name}}/target/classes
+  Currency-Exchange-Service:
+    runs-on: ubuntu-latest
+    needs: Eureka-server
+    steps:
+    - uses: actions/checkout@v2
+    - id: 'auth'
+      uses: 'google-github-actions/auth@v0'
+      with:
+        credentials_json: '${{ secrets.GCP_SA_KEY }}'
+    - run: mkdir -p /tmp/$CurrencyExchange_name/
+    - name: currency-exchange-service
+      run: |
+        gcloud config set project us-gcp-ame-con-116-npd-1
+        docker build -t gcr.io/us-gcp-ame-con-116-npd-1/$Repo_name/$CurrencyExchange_name ./currency-exchange-service
+        gcloud auth configure-docker -q
+        docker push gcr.io/us-gcp-ame-con-116-npd-1/$Repo_name/$CurrencyExchange_name
+        gcloud run deploy $Repo_name$CurrencyExchange_name --image gcr.io/us-gcp-ame-con-116-npd-1/$Repo_name/$CurrencyExchange_name  --platform managed --region us-west2 --allow-unauthenticated
+    #Copy class files onto host Ubuntu container
+    - name: Copy Binaries to host container
+      run: |-
+        docker create -ti --name intermediate_con gcr.io/us-gcp-ame-con-116-npd-1/$Repo_name/$CurrencyExchange_name bash
+        docker cp  intermediate_con:/usr/local/target /tmp/$CurrencyExchange_name/target/
+        docker rm -f intermediate_con
+    - uses: actions/upload-artifact@v3
+      with:
+        name: binaries-artifact
+        path: /tmp/${{env.CurrencyExchange_name}}/target/classes
+  
+  S3-Upload:
+    runs-on: ubuntu-latest
+    needs: [Eureka-server, Currency-Exchange-Service, Currency-Conversion-Service, API-Gateway]
+    steps:
+    - uses: actions/checkout@v2
+    - name: Artifact
+      run: |
+          aws configure set default.region us-east-1
+          aws configure set aws_access_key_id ${{ secrets.AWS_ACCESS_KEY }}
+          aws configure set aws_secret_access_key ${{ secrets.AWS_SECRET_KEY }}
+          export FOLDER=$(echo $SERVICE_NAME | cut -d'-' -f 5)
+          rm -rf .scannerwork
+          aws s3 sync . "s3://hu-evaluator/hu/22/java advanced/$FOLDER/" --delete
+  Sonarqube:
+    runs-on: ubuntu-latest
+    needs: S3-Upload
+    steps:
+      - uses: actions/checkout@v2
+      - uses: actions/download-artifact@v3
+        with:
+          name: binaries-artifact
+      - name: Sonar scanner
+        env:
+          SQ_TOKEN: ${{ secrets.SQ_ADMIN_TOKEN }}
+          SQ_URL: https://sonarqube.hashedin.com
+          SCANNER_REPO: .
+        shell: bash
+        run: ./.github/actions/sonar-scanner-runner.sh
+      - name: Cleanup Artifact
+        uses: geekyeggo/delete-artifact@v1
+        with:
+          name: binaries-artifact
