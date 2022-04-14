@@ -1,1 +1,1 @@
-# hu-22-java-adv-master
+# hu-22-java-adv-sniraj
